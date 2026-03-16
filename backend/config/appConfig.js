@@ -24,6 +24,7 @@ const defaultOrigins = [
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
+  'http://10.160.28.180:5173',
 ];
 const configuredOrigin = FRONTEND_ORIGIN ? [FRONTEND_ORIGIN] : [];
 const allowlist = new Set([...configuredOrigin, ...defaultOrigins]);
