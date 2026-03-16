@@ -19,11 +19,96 @@ const emailStyles = {
     padding: '15px',
     margin: '20px 0',
   },
+  infoBox: {
+    backgroundColor: '#f3f4f6',
+    borderLeft: '4px solid #2563eb',
+    padding: '15px',
+    margin: '20px 0',
+  },
+  warningBox: {
+    backgroundColor: '#fef3c7',
+    borderLeft: '4px solid #f59e0b',
+    padding: '15px',
+    margin: '20px 0',
+  },
   hr: {
     border: 'none',
     borderTop: '1px solid #e5e7eb',
     margin: '20px 0',
   },
+};
+
+const normalizeValue = (v) => String(v || '').trim().toLowerCase();
+
+const styleToInline = (styleObj) =>
+  Object.entries(styleObj)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('; ');
+
+const buildStudentWelcomeEmailHtml = ({
+  name,
+  email,
+  class_id,
+  date_of_birth,
+  student_id,
+  defaultPassword,
+}) => {
+  const supportEmail =
+    process.env.SUPPORT_EMAIL ||
+    process.env.OTP_EMAIL_FROM ||
+    process.env.SMTP_USER ||
+    'support@example.com';
+
+  return `
+    <div style="${styleToInline(emailStyles.container)}">
+      <p>Dear <strong>${name}</strong>,</p>
+
+      <p>Welcome to the <strong>College CR Election System</strong>!</p>
+
+      <p>Your student account has been successfully created. Below are your login credentials and profile details:</p>
+
+      <div style="${styleToInline(emailStyles.infoBox)}">
+        <p style="margin: 0 0 10px 0;"><strong>Login Credentials:</strong></p>
+        <ul style="margin: 0; padding-left: 20px;">
+          <li style="margin: 5px 0;"><strong>Student ID:</strong> <span style="font-size: 16px; color: #2563eb; font-weight: bold;">${student_id}</span></li>
+          <li style="margin: 5px 0;"><strong>Default Password:</strong> <span style="font-size: 16px; color: #2563eb; font-weight: bold;">${defaultPassword}</span></li>
+        </ul>
+      </div>
+
+      <p><strong>Profile Information:</strong></p>
+      <ul style="padding-left: 20px;">
+        <li style="margin: 5px 0;">Full Name: ${name}</li>
+        <li style="margin: 5px 0;">Email: ${email}</li>
+        <li style="margin: 5px 0;">Class ID: ${class_id}</li>
+        <li style="margin: 5px 0;">Date of Birth: ${date_of_birth}</li>
+      </ul>
+
+      <div style="${styleToInline(emailStyles.warningBox)}">
+        <p style="margin: 0 0 10px 0;"><strong>Important Security Instructions:</strong></p>
+        <p style="margin: 0;">For your account security, you must <strong>change your password upon first login</strong>. Using a strong, unique password helps protect your personal information and ensures the integrity of the election process.</p>
+      </div>
+
+      <p><strong>Next Steps:</strong></p>
+      <ol style="padding-left: 20px;">
+        <li style="margin: 8px 0;">Log in to the system using your <strong>Student ID</strong> and <strong>Default Password</strong></li>
+        <li style="margin: 8px 0;"><strong>Change your password immediately</strong></li>
+        <li style="margin: 8px 0;">Review your profile information for accuracy</li>
+        <li style="margin: 8px 0;">Familiarize yourself with the election system</li>
+      </ol>
+
+      <p style="text-align: center; margin: 20px 0;">Action Required: Login to System -> Complete Initial Setup</p>
+
+      <p>If you notice any incorrect information in your profile or have questions about using the system, please contact our support team at <a href="mailto:${supportEmail}" style="color: #2563eb;">${supportEmail}</a>.</p>
+
+      <p>Thank you for participating in the College CR Election System.</p>
+
+      <hr style="${styleToInline(emailStyles.hr)}">
+
+      <p style="margin: 5px 0;">Best regards,<br>
+      <strong>The Election Committee</strong><br>
+      College CR Election System</p>
+    </div>
+  `;
 };
 
 // =============== ADMIN PROFILE ===============
@@ -142,7 +227,7 @@ exports.deleteClass = async (req, res) => {
         'SELECT class_id, class_name FROM Class WHERE class_id = ?',
         [id]
       );
-      
+
       if (classRows.length === 0) {
         await conn.rollback();
         return res.status(404).json({ error: 'Class not found' });
@@ -186,7 +271,7 @@ exports.deleteClass = async (req, res) => {
         'DELETE FROM Class WHERE class_id = ?',
         [id]
       );
-      
+
       if (delRes.affectedRows === 0) {
         await conn.rollback();
         return res.status(404).json({ error: 'Class not found' });
@@ -205,7 +290,7 @@ exports.deleteClass = async (req, res) => {
         studentsRemoved: studentsCount,
         force,
       });
-      
+
       // Notify affected students by email (best-effort, after response)
       // This runs asynchronously after the response is sent
       if (studentsRows.length) {
@@ -272,7 +357,7 @@ exports.deleteClass = async (req, res) => {
     } catch (txErr) {
       try {
         await conn.rollback();
-      } catch (_) {}
+      } catch (_) { }
       throw txErr;
     } finally {
       if (conn) conn.release();
@@ -372,6 +457,30 @@ exports.createStudent = async (req, res) => {
         return res.status(400).json({ error: 'Invalid class_id' });
       }
 
+      // Duplicate validations
+      const normalizedName = normalizeValue(name);
+      const normalizedEmail = normalizeValue(email);
+
+      const [dupNameRows] = await conn.query(
+        'SELECT student_id FROM Student WHERE class_id = ? AND LOWER(TRIM(name)) = ? LIMIT 1 FOR UPDATE',
+        [class_id, normalizedName]
+      );
+      if (dupNameRows.length) {
+        await conn.rollback();
+        conn.release();
+        return res.status(409).json({ error: 'Duplicate name in selected class' });
+      }
+
+      const [dupEmailRows] = await conn.query(
+        'SELECT student_id FROM Student WHERE LOWER(TRIM(email)) = ? LIMIT 1 FOR UPDATE',
+        [normalizedEmail]
+      );
+      if (dupEmailRows.length) {
+        await conn.rollback();
+        conn.release();
+        return res.status(409).json({ error: 'Duplicate email' });
+      }
+
       /*
        * Lock rows for this class to avoid race conditions and find the max suffix used so far
        * Lock all existing students for this class to compute the smallest available suffix safely
@@ -437,10 +546,10 @@ exports.createStudent = async (req, res) => {
         await conn.rollback();
         conn.release();
         return res
-        .status(409)
-        .json({
-          error: 'Failed to generate a unique Student ID. Please retry.',
-        });
+          .status(409)
+          .json({
+            error: 'Failed to generate a unique Student ID. Please retry.',
+          });
       }
 
       await logAction(req.user.id, req.user.role, req.ip, 'STUDENT_CREATED', {
@@ -452,7 +561,7 @@ exports.createStudent = async (req, res) => {
     } catch (txErr) {
       try {
         await conn.rollback();
-      } catch (_) {}
+      } catch (_) { }
       conn.release();
       throw txErr;
     }
@@ -472,56 +581,14 @@ exports.createStudent = async (req, res) => {
         });
         const subject =
           'Welcome to the College CR Election System - Your Account Details';
-        const html = `
-          <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333;'>
-            <p>Dear <strong>${name}</strong>,</p>
-            
-            <p>Welcome to the <strong>College CR Election System</strong>!</p>
-            
-            <p>Your student account has been successfully created. Below are your login credentials and profile details:</p>
-            
-            <div style='background-color: #f3f4f6; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0;'>
-              <p style='margin: 0 0 10px 0;'><strong>Login Credentials:</strong></p>
-              <ul style='margin: 0; padding-left: 20px;'>
-                <li style='margin: 5px 0;'><strong>Student ID:</strong> <span style='font-size: 16px; color: #2563eb; font-weight: bold;'>${student_id}</span></li>
-                <li style='margin: 5px 0;'><strong>Default Password:</strong> <span style='font-size: 16px; color: #2563eb; font-weight: bold;'>${defaultPassword}</span></li>
-              </ul>
-            </div>
-            
-            <p><strong>Profile Information:</strong></p>
-            <ul style='padding-left: 20px;'>
-              <li style='margin: 5px 0;'>Full Name: ${name}</li>
-              <li style='margin: 5px 0;'>Email: ${email}</li>
-              <li style='margin: 5px 0;'>Class ID: ${class_id}</li>
-              <li style='margin: 5px 0;'>Date of Birth: ${date_of_birth}</li>
-            </ul>
-            
-            <div style='background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;'>
-              <p style='margin: 0 0 10px 0;'><strong>⚠️ Important Security Instructions:</strong></p>
-              <p style='margin: 0;'>For your account security, you must <strong>change your password upon first login</strong>. Using a strong, unique password helps protect your personal information and ensures the integrity of the election process.</p>
-            </div>
-            
-            <p><strong>Next Steps:</strong></p>
-            <ol style='padding-left: 20px;'>
-              <li style='margin: 8px 0;'>Log in to the system using your <strong>Student ID</strong> and <strong>Default Password</strong></li>
-              <li style='margin: 8px 0;'><strong>Change your password immediately</strong></li>
-              <li style='margin: 8px 0;'>Review your profile information for accuracy</li>
-              <li style='margin: 8px 0;'>Familiarize yourself with the election system</li>
-            </ol>
-            
-            <p style='text-align: center; margin: 20px 0;'>Action Required: Login to System -> Complete Initial Setup</p>
-            
-            <p>If you notice any incorrect information in your profile or have questions about using the system, please contact our support team at <a href='mailto:[Support Email Address]' style='color: #2563eb;'>[Support Email Address]</a>.</p>
-            
-            <p>Thank you for participating in the College CR Election System.</p>
-            
-            <hr style='border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;'>
-            
-            <p style='margin: 5px 0;'>Best regards,<br>
-            <strong>The Election Committee</strong><br>
-            College CR Election System</p>
-          </div>
-        `;
+        const html = buildStudentWelcomeEmailHtml({
+          name,
+          email,
+          class_id,
+          date_of_birth,
+          student_id,
+          defaultPassword,
+        });
         await transporter.sendMail({
           from: process.env.OTP_EMAIL_FROM,
           to: email,
@@ -539,7 +606,7 @@ exports.createStudent = async (req, res) => {
     res.json({
       message: 'Student created successfully',
       defaultPassword,
-      
+
       student_id,
     });
   } catch (err) {
@@ -646,6 +713,208 @@ exports.resetStudentPassword = async (req, res) => {
     res.json({ message: `Password reset for ${id}`, tempPassword });
   } catch (err) {
     console.error('resetStudentPassword error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// =============== BULK IMPORT STUDENTS FROM CSV ===============
+/*
+ * Purpose: Import multiple students from an uploaded CSV file.
+ *   The admin selects the class BEFORE uploading; the CSV only needs:
+ *   name, email, date_of_birth  (columns in any order, header row required)
+ * Parameters:
+ *   req.file   - multer memory-stored CSV file (field name: "file")
+ *   req.body.class_id - the class all imported students belong to
+ * Returns: JSON { imported, skipped, errors[] }
+ */
+exports.bulkImportStudents = async (req, res) => {
+  try {
+    const { class_id } = req.body;
+    if (!class_id) return res.status(400).json({ error: 'class_id is required' });
+    if (!req.file) return res.status(400).json({ error: 'CSV file is required' });
+
+    // Validate class exists
+    const [classRows] = await pool.query('SELECT 1 FROM Class WHERE class_id = ? LIMIT 1', [class_id]);
+    if (!classRows.length) return res.status(400).json({ error: 'Invalid class_id' });
+
+    // ── RFC-4180-compliant line parser — handles quoted fields and extra columns ──
+    const parseLine = (line) => {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    // Parse CSV from buffer
+    const text = req.file.buffer.toString('utf8');
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return res.status(400).json({ error: 'CSV has no data rows' });
+
+    // Parse header
+    const header = parseLine(lines[0]).map((h) => h.trim().toLowerCase().replace(/[^a-z_]/g, ''));
+    const nameIdx = header.indexOf('name');
+    const emailIdx = header.indexOf('email');
+    const dobIdx = header.indexOf('date_of_birth');
+    if (nameIdx === -1 || emailIdx === -1 || dobIdx === -1) {
+      return res.status(400).json({ error: 'CSV must have columns: name, email, date_of_birth' });
+    }
+
+    const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
+    const results = [];
+    let imported = 0;
+
+    // Preload existing values for duplicate checks
+    const [existingNameRows] = await pool.query(
+      'SELECT name FROM Student WHERE class_id = ?',
+      [class_id]
+    );
+    const existingNameSet = new Set(
+      existingNameRows
+        .map((r) => normalizeValue(r.name))
+        .filter(Boolean)
+    );
+
+    const [existingEmailRows] = await pool.query(
+      "SELECT email FROM Student WHERE email IS NOT NULL AND TRIM(email) <> ''"
+    );
+    const existingEmailSet = new Set(
+      existingEmailRows
+        .map((r) => normalizeValue(r.email))
+        .filter(Boolean)
+    );
+
+    // Track newly inserted rows in this same CSV request
+    const pendingNameSet = new Set();
+    const pendingEmailSet = new Set();
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseLine(lines[i]);
+      const name = cols[nameIdx] || '';
+      const email = cols[emailIdx] || '';
+      const date_of_birth = cols[dobIdx] || '';
+      const normalizedName = normalizeValue(name);
+      const normalizedEmail = normalizeValue(email);
+
+      // Basic validation per row
+      if (!name || !email || !date_of_birth) {
+        results.push({ row: i + 1, email, status: 'skipped', reason: 'Missing fields' });
+        continue;
+      }
+      if (!gmailRegex.test(email)) {
+        results.push({ row: i + 1, email, status: 'skipped', reason: 'Not a Gmail address' });
+        continue;
+      }
+      if (existingNameSet.has(normalizedName) || pendingNameSet.has(normalizedName)) {
+        results.push({ row: i + 1, email, status: 'skipped', reason: 'Duplicate name in selected class' });
+        continue;
+      }
+      if (existingEmailSet.has(normalizedEmail) || pendingEmailSet.has(normalizedEmail)) {
+        results.push({ row: i + 1, email, status: 'skipped', reason: 'Duplicate email' });
+        continue;
+      }
+      const dateParts = date_of_birth.split('-');
+      if (dateParts.length !== 3 || dateParts[0].length !== 4) {
+        results.push({ row: i + 1, email, status: 'skipped', reason: 'Invalid date format (YYYY-MM-DD)' });
+        continue;
+      }
+      const [yyyy, mm, dd] = dateParts;
+      const defaultPassword = `${dd}${mm}${yyyy}`.toLowerCase();
+      const hash = await bcrypt.hash(defaultPassword, 10);
+
+      // Insert inside transaction with auto-id logic
+      const conn = await pool.getConnection();
+      let student_id;
+      try {
+        await conn.beginTransaction();
+        const [existingRows] = await conn.query(
+          'SELECT student_id FROM Student WHERE class_id = ? FOR UPDATE',
+          [class_id]
+        );
+        const used = new Set();
+        for (const r of existingRows) {
+          const m = /CL\d+S(\d+)$/.exec(String(r.student_id || ''));
+          if (m) used.add(parseInt(m[1], 10));
+        }
+        const classPart = String(class_id).padStart(2, '0');
+        let candidate = 1;
+        let inserted = false;
+        for (let attempt = 0; attempt < 2000 && !inserted; attempt++) {
+          while (used.has(candidate)) candidate++;
+          const suffix = String(candidate).padStart(4, '0');
+          student_id = `CL${classPart}S${suffix}`;
+          try {
+            await conn.query(
+              'INSERT INTO Student (student_id, name, email, date_of_birth, class_id, password_hash, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [student_id, name, email, date_of_birth, class_id, hash, true]
+            );
+            inserted = true;
+          } catch (e) {
+            if (e && e.code === 'ER_DUP_ENTRY') {
+              used.add(candidate);
+              candidate++;
+            } else {
+              throw e;
+            }
+          }
+        }
+        if (!inserted) throw new Error('Could not generate unique ID');
+        await logAction(req.user.id, req.user.role, req.ip, 'STUDENT_BULK_IMPORTED', { student_id });
+        await conn.commit();
+        conn.release();
+        imported++;
+        pendingNameSet.add(normalizedName);
+        pendingEmailSet.add(normalizedEmail);
+        results.push({ row: i + 1, email, status: 'imported', student_id, defaultPassword });
+
+        // Best-effort welcome email
+        try {
+          const host = process.env.SMTP_HOST;
+          const port = parseInt(process.env.SMTP_PORT || '587');
+          const user = process.env.SMTP_USER;
+          const pass = process.env.SMTP_PASS;
+          if (host && user && pass) {
+            const transporter = nodemailer.createTransport({ host, port, secure: false, auth: { user, pass } });
+            await transporter.sendMail({
+              from: process.env.OTP_EMAIL_FROM,
+              to: email,
+              subject: 'Welcome to the College CR Election System - Your Account Details',
+              html: buildStudentWelcomeEmailHtml({
+                name,
+                email,
+                class_id,
+                date_of_birth,
+                student_id,
+                defaultPassword,
+              }),
+            });
+          }
+        } catch (_) { /* email is best-effort */ }
+
+      } catch (txErr) {
+        try { await conn.rollback(); } catch (_) { }
+        conn.release();
+        const reason = txErr.code === 'ER_DUP_ENTRY' ? 'Duplicate email' : (txErr.message || 'DB error');
+        results.push({ row: i + 1, email, status: 'skipped', reason });
+      }
+    }
+
+    const skipped = results.filter((r) => r.status === 'skipped').length;
+    res.json({ imported, skipped, results });
+  } catch (err) {
+    console.error('bulkImportStudents error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };

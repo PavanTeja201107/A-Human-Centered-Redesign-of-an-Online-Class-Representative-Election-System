@@ -37,3 +37,13 @@ export const resetStudentPassword = (id) =>
 export const getAdminProfile = () => axios.get('/admin/profile').then((r) => r.data);
 export const updateAdminProfile = (payload) =>
   axios.put('/admin/profile', payload).then((r) => r.data);
+
+// Bulk import students from CSV (class_id chosen by admin, CSV has name/email/date_of_birth)
+export const bulkImportStudents = (classId, file) => {
+  const form = new FormData();
+  form.append('class_id', classId);
+  form.append('file', file);
+  return axios.post('/admin/students/bulk-import', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then((r) => r.data);
+};

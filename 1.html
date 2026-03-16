@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Student Bulk Upload Demo</title>
+
+<link rel="stylesheet"
+href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<style>
+
+body{
+background:#f4f6f9;
+padding:40px;
+font-family:Arial;
+}
+
+.container-box{
+background:white;
+padding:30px;
+border-radius:10px;
+box-shadow:0px 4px 10px rgba(0,0,0,0.1);
+}
+
+.drop-area{
+border:2px dashed #6c757d;
+padding:40px;
+text-align:center;
+border-radius:10px;
+cursor:pointer;
+transition:0.3s;
+}
+
+.drop-area:hover{
+background:#f8f9fa;
+}
+
+.table-container{
+max-height:300px;
+overflow:auto;
+}
+
+</style>
+
+</head>
+<body>
+
+<div class="container">
+
+<div class="container-box">
+
+<h3>Students - Bulk Upload CSV</h3>
+
+<hr>
+
+<div class="drop-area" id="dropArea">
+
+<h4>📂 Drag & Drop CSV File</h4>
+<p>or</p>
+
+<input type="file" id="csvFile" accept=".csv" class="form-control">
+
+<br>
+
+<button class="btn btn-primary" onclick="previewCSV()">
+👁 Preview Data
+</button>
+
+</div>
+
+<br>
+
+<button class="btn btn-secondary" onclick="downloadTemplate()">
+📄 Download CSV Template
+</button>
+
+<br><br>
+
+<h5>Preview Students</h5>
+
+<div class="table-container">
+
+<table class="table table-bordered">
+
+<thead>
+
+<tr>
+<th>Student ID</th>
+<th>Name</th>
+<th>Email</th>
+<th>DOB</th>
+<th>Class</th>
+<th>Status</th>
+</tr>
+
+</thead>
+
+<tbody id="previewTable"></tbody>
+
+</table>
+
+</div>
+
+<br>
+
+<button class="btn btn-success" onclick="uploadStudents()">
+⬆ Upload Students
+</button>
+
+</div>
+
+</div>
+
+
+<script>
+
+let studentsData = [];
+
+const columnMap = {
+student_id:["student id","id","studentid"],
+name:["name","student name"],
+email:["email","mail"],
+dob:["dob","date of birth"],
+class:["class","section"]
+};
+
+
+function normalize(str){
+return str.toLowerCase().trim();
+}
+
+
+function detectColumn(headers,possible){
+
+for(let h of headers){
+
+let norm = normalize(h);
+
+for(let p of possible){
+
+if(norm === p) return h;
+
+}
+
+}
+
+return null;
+
+}
+
+
+
+function previewCSV(){
+
+const file = document.getElementById("csvFile").files[0];
+
+if(!file){
+
+alert("Please select CSV file");
+return;
+
+}
+
+Papa.parse(file,{
+
+header:true,
+skipEmptyLines:true,
+
+complete:function(results){
+
+studentsData = results.data;
+
+const headers = Object.keys(studentsData[0]);
+
+const idCol = detectColumn(headers,columnMap.student_id);
+const nameCol = detectColumn(headers,columnMap.name);
+const emailCol = detectColumn(headers,columnMap.email);
+const dobCol = detectColumn(headers,columnMap.dob);
+const classCol = detectColumn(headers,columnMap.class);
+
+const table = document.getElementById("previewTable");
+
+table.innerHTML="";
+
+studentsData.forEach((row,index)=>{
+
+let status="✅ Valid";
+
+if(!row[idCol] || !row[nameCol] || !row[emailCol]){
+
+status="❌ Missing Required Field";
+
+}
+
+table.innerHTML+=`
+<tr>
+<td>${row[idCol] || ""}</td>
+<td>${row[nameCol] || ""}</td>
+<td>${row[emailCol] || ""}</td>
+<td>${row[dobCol] || ""}</td>
+<td>${row[classCol] || ""}</td>
+<td>${status}</td>
+</tr>
+`;
+
+});
+
+}
+
+});
+
+}
+
+
+
+function uploadStudents(){
+
+if(studentsData.length===0){
+
+alert("No data loaded");
+return;
+
+}
+
+let success=0;
+
+studentsData.forEach(row=>{
+
+if(row["Student ID"] && row["Name"] && row["Email"]){
+
+success++;
+
+}
+
+});
+
+alert(success+" Students Ready for Upload (Demo Only)");
+
+}
+
+
+
+function downloadTemplate(){
+
+const csv=`Student ID,Name,Email,DOB,Class
+S001,Ravi Kumar,ravi@gmail.com,12-03-2003,CSE-A
+S002,Ananya Reddy,ananya@gmail.com,03-05-2003,CSE-A
+S003,Arjun Mehta,arjun@gmail.com,08-01-2003,CSE-A`;
+
+const blob=new Blob([csv],{type:'text/csv'});
+
+const link=document.createElement("a");
+
+link.href=URL.createObjectURL(blob);
+
+link.download="students_template.csv";
+
+link.click();
+
+}
+
+
+const dropArea=document.getElementById("dropArea");
+
+dropArea.addEventListener("dragover",e=>{
+
+e.preventDefault();
+dropArea.style.background="#e9ecef";
+
+});
+
+dropArea.addEventListener("dragleave",()=>{
+
+dropArea.style.background="white";
+
+});
+
+dropArea.addEventListener("drop",e=>{
+
+e.preventDefault();
+
+const file=e.dataTransfer.files[0];
+
+document.getElementById("csvFile").files=e.dataTransfer.files;
+
+previewCSV();
+
+});
+
+</script>
+
+</body>
+</html>
