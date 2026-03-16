@@ -16,6 +16,12 @@ router.get(
   ctrl.getMyActiveElection
 );
 router.get('/my', verifyToken, requireRole('STUDENT'), ctrl.getMyElections);
+router.get(
+  '/my/winner-certificate',
+  verifyToken,
+  requireRole('STUDENT'),
+  ctrl.getMyWinnerCertificate
+);
 
 // Removed unused class-scoped and id-based admin actions (activate/publish/update/get)
 router.post(

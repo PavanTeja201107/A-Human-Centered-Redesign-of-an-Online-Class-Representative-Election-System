@@ -27,3 +27,5 @@ export const notifyNominationOpen = (id) =>
 // get my active election (student convenience)
 export const getMyActiveElection = () => axios.get('/elections/my/active').then((r) => r.data);
 export const getMyElections = () => axios.get('/elections/my').then((r) => r.data);
+export const getMyWinnerCertificate = () =>
+  axios.get('/elections/my/winner-certificate').then((r) => r.data);

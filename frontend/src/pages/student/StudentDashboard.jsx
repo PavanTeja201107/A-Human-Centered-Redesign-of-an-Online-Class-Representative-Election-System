@@ -16,7 +16,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/Navbar';
-import { getMyActiveElection } from '../../api/electionApi';
+import { getMyActiveElection, getMyWinnerCertificate } from '../../api/electionApi';
 import { getMyNotifications } from '../../api/notificationsApi';
 import Alert from '../../components/ui/Alert';
 import LastLoginBanner from '../../components/ui/LastLoginBanner';
@@ -26,6 +26,7 @@ export default function StudentDashboard() {
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [canDownloadWinnerCertificate, setCanDownloadWinnerCertificate] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -39,6 +40,14 @@ export default function StudentDashboard() {
         const n = await getMyNotifications();
         setNotices(n || []);
       } catch {}
+
+      try {
+        await getMyWinnerCertificate();
+        setCanDownloadWinnerCertificate(true);
+      } catch {
+        setCanDownloadWinnerCertificate(false);
+      }
+
       setLoading(false);
     };
     fetch();
@@ -56,6 +65,10 @@ export default function StudentDashboard() {
     { to: '/student/results', label: 'Results' },
     { to: '/student/profile', label: 'My Profile' },
   ];
+  const winnerCertificateLink = {
+    to: '/student/winner-certificate',
+    label: 'Download Winner Certificate',
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -103,6 +116,14 @@ export default function StudentDashboard() {
                           {l.label}
                         </Link>
                       ))}
+                      {canDownloadWinnerCertificate && (
+                        <Link
+                          to={winnerCertificateLink.to}
+                          className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-emerald-700"
+                        >
+                          {winnerCertificateLink.label}
+                        </Link>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -113,7 +134,10 @@ export default function StudentDashboard() {
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <h2 className="mb-3 text-xl font-bold text-gray-900">Quick Links</h2>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {quickLinks.map((l) => (
+                  {[
+                    ...quickLinks,
+                    ...(canDownloadWinnerCertificate ? [winnerCertificateLink] : []),
+                  ].map((l) => (
                     <Link
                       key={l.to}
                       to={l.to}

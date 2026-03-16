@@ -426,6 +426,112 @@ exports.getMyElections = async (req, res) => {
   }
 };
 
+/*
+ * Purpose: Return winner-certificate data for the logged-in student if they are the declared winner.
+ * Parameters: req - authenticated student request; res - returns certificate payload or access error.
+ * Returns: JSON object with student/class/election data for certificate rendering.
+ */
+exports.getMyWinnerCertificate = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const studentId = req.user.id;
+    const [[student]] = await pool.query(
+      `SELECT s.student_id, s.class_id, s.name, c.class_name
+       FROM Student s
+       LEFT JOIN Class c ON c.class_id = s.class_id
+       WHERE s.student_id = ?`,
+      [studentId]
+    );
+
+    if (!student || !student.class_id) {
+      return res.status(404).json({ error: 'Student class not found' });
+    }
+
+    // Use the latest published, completed election for the student's class.
+    const [eRows] = await pool.query(
+      `SELECT e.election_id, e.voting_end, c.class_name
+       FROM Election e
+       JOIN Class c ON c.class_id = e.class_id
+       WHERE e.class_id = ?
+         AND e.is_published = TRUE
+         AND e.voting_end <= NOW()
+       ORDER BY e.voting_end DESC
+       LIMIT 1`,
+      [student.class_id]
+    );
+
+    if (!eRows.length) {
+      return res.status(404).json({ error: 'Winner certificate not available yet' });
+    }
+
+    const election = eRows[0];
+    const [candidateRows] = await pool.query(
+      `SELECT n.student_id,
+              s.name,
+              COALESCE(v.votes, 0) AS votes
+       FROM Nomination n
+       JOIN Student s ON s.student_id = n.student_id
+       LEFT JOIN (
+         SELECT candidate_id, COUNT(*) AS votes
+         FROM VoteAnonymous
+         WHERE election_id = ?
+         GROUP BY candidate_id
+       ) v ON v.candidate_id = n.student_id
+       WHERE n.election_id = ?
+         AND n.status = 'APPROVED'
+       ORDER BY votes DESC, n.student_id ASC`,
+      [election.election_id, election.election_id]
+    );
+
+    if (!candidateRows.length) {
+      return res.status(404).json({ error: 'Winner has not been determined yet' });
+    }
+
+    const topVotes = Number(candidateRows[0].votes || 0);
+    if (topVotes <= 0) {
+      return res.status(404).json({ error: 'Winner has not been determined yet' });
+    }
+
+    const topCandidates = candidateRows.filter(
+      (candidate) => Number(candidate.votes || 0) === topVotes
+    );
+
+    if (topCandidates.length !== 1) {
+      return res.status(409).json({ error: 'Winner is not finalized yet' });
+    }
+
+    const winner = topCandidates[0];
+
+    if (winner.student_id !== studentId) {
+      return res
+        .status(403)
+        .json({ error: 'You are not authorized to view this certificate.' });
+    }
+
+    await logAction(studentId, req.user.role, req.ip, 'VIEW_WINNER_CERTIFICATE', {
+      election_id: election.election_id,
+    });
+
+    res.json({
+      election_id: election.election_id,
+      title: 'CLASS REPRESENTATIVE ELECTION',
+      subtitle: 'WINNER DECLARATION CERTIFICATE',
+      organization_name: process.env.CERT_ORGANIZATION_NAME || null,
+      student_name: winner.name,
+      student_id: winner.student_id,
+      class_name: election.class_name,
+      election_date: election.voting_end,
+      vote_count: topVotes,
+    });
+  } catch (err) {
+    console.error('getMyWinnerCertificate error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 
 // Notify students when election results are published
 /*

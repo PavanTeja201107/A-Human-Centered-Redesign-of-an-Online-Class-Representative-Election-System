@@ -28,6 +28,7 @@ import ElectionPage from './student/StudentElections';
 import NominationForm from './student/NominationForm';
 import VotePage from './student/Vote';
 import ResultsPage from './student/ElectionResults';
+import WinnerCertificate from './student/WinnerCertificate';
 
 export default function StudentArea() {
   const { user, logout } = useAuth();
@@ -105,6 +106,14 @@ export default function StudentArea() {
         element={
           <ProtectedRoute role="STUDENT">
             <ResultsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="winner-certificate"
+        element={
+          <ProtectedRoute role="STUDENT">
+            <WinnerCertificate />
           </ProtectedRoute>
         }
       />
