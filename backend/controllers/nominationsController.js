@@ -41,8 +41,12 @@ const emailStyles = {
  */
 exports.submitNomination = async (req, res) => {
   try {
-    const { election_id, manifesto, photo_url } = req.body;
+    const { election_id, manifesto } = req.body;
     const studentId = req.user.id;
+    const uploadedPhotoUrl = req.file
+      ? `${req.protocol}://${req.get('host')}/uploads/nominations/${req.file.filename}`
+      : null;
+    const finalPhotoUrl = uploadedPhotoUrl || req.body.photo_url || null;
     // check nomination window
     const [eRows] = await pool.query(
       'SELECT * FROM Election WHERE election_id = ?',
@@ -105,7 +109,7 @@ exports.submitNomination = async (req, res) => {
 
     await pool.query(
       'INSERT INTO Nomination (election_id, student_id, manifesto, photo_url) VALUES (?, ?, ?, ?)',
-      [election_id, studentId, manifesto, photo_url]
+      [election_id, studentId, manifesto, finalPhotoUrl]
     );
     await logAction(studentId, req.user.role, req.ip, 'NOMINATION_SUBMITTED', {
       election_id,

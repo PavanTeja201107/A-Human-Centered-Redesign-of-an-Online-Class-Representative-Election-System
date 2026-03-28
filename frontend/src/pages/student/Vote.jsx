@@ -19,6 +19,44 @@ import { listApprovedByElection } from '../../api/nominationApi';
 import { getVoteToken, castVote, checkVoteStatus } from '../../api/voteApi';
 import { getPolicy, acceptPolicy, getPolicyStatus } from '../../api/policyApi';
 
+const toDirectImageUrl = (url) => {
+  try {
+    if (!url || typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    if (!trimmed) return '';
+
+    let m = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+    if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+    m = trimmed.match(/[?&]id=([^&]+)/);
+    if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+    return trimmed;
+  } catch {
+    return '';
+  }
+};
+
+const buildAvatarFallback = (name) => {
+  const safeName = encodeURIComponent((name || 'Candidate').trim() || 'Candidate');
+  return `https://ui-avatars.com/api/?name=${safeName}&background=e5e7eb&color=374151&size=128`;
+};
+
+const resolveCandidatePhoto = (candidate) => {
+  const rawPhoto =
+    candidate?.photo_url ||
+    candidate?.photoUrl ||
+    candidate?.image_url ||
+    candidate?.imageUrl ||
+    candidate?.avatar_url ||
+    candidate?.avatarUrl ||
+    candidate?.student_photo_url ||
+    candidate?.profile_photo_url ||
+    '';
+
+  return toDirectImageUrl(rawPhoto) || buildAvatarFallback(candidate?.name);
+};
+
 export default function VotePage() {
   const [election, setElection] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -74,19 +112,13 @@ export default function VotePage() {
 
         // Fetch candidates with manifesto
         const list = await listApprovedByElection(e.election_id);
-        const normalize = (url) => {
-          try {
-            if (!url) return url;
-            let m = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
-            if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-            m = url.match(/[?&]id=([^&]+)/);
-            if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-            return url;
-          } catch {
-            return url;
-          }
-        };
-        setCandidates((list || []).map((c) => ({ ...c, photo_url: normalize(c.photo_url) })));
+        setCandidates(
+          (list || []).map((c) => ({
+            ...c,
+            photo_url: resolveCandidatePhoto(c),
+            manifesto: c?.manifesto || c?.Manifesto || '',
+          }))
+        );
 
         try {
           const p = await getPolicy('Voting Policy');
@@ -315,31 +347,15 @@ export default function VotePage() {
                   />
 
                   {/* Candidate Photo */}
-                  {c.photo_url ? (
-                    <img
-                      src={c.photo_url}
-                      alt={c.name}
-                      className="w-16 h-16 rounded-full object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = '/default-avatar.png';
-                      }}
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center">
-                      <svg
-                        className="w-10 h-10 text-gray-500"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                  )}
+                  <img
+                    src={c.photo_url}
+                    alt={c.name}
+                    className="w-16 h-16 rounded-full object-cover border border-gray-200"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = buildAvatarFallback(c.name);
+                    }}
+                  />
 
                   {/* Candidate Info */}
                   <div className="flex-1">

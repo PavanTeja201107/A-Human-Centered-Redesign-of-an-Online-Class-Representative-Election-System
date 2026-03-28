@@ -26,7 +26,8 @@ export default function NominationForm() {
   const [allElections, setAllElections] = useState([]);
   const [myNomination, setMyNomination] = useState(null);
   const [manifesto, setManifesto] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState('');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [policy, setPolicy] = useState(null);
@@ -89,10 +90,18 @@ export default function NominationForm() {
         const mine = await getMyNomination(election.election_id);
         setMyNomination(mine);
         if (mine && mine.manifesto) setManifesto(mine.manifesto);
-        if (mine && mine.photo_url) setPhotoUrl(mine.photo_url);
+        if (mine && mine.photo_url) setPhotoPreview(toDirectImageUrl(mine.photo_url));
       } catch {}
     })();
   }, [election]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview && photoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(photoPreview);
+      }
+    };
+  }, [photoPreview]);
 
   const toDirectImageUrl = (url) => {
     try {
@@ -135,6 +144,26 @@ export default function NominationForm() {
     // Policy already accepted, proceed to nomination
     setElection(e);
   };
+  const handlePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    setErr('');
+    setPhotoFile(null);
+    setPhotoPreview('');
+
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setErr('Please upload a valid image file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErr('Photo must be 5 MB or smaller.');
+      return;
+    }
+
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     
@@ -149,12 +178,12 @@ export default function NominationForm() {
       if (myNomination)
         throw new Error('You have already submitted a nomination for this election');
       // Policy already checked when clicking "Nominate" button
-      const normalizedUrl = toDirectImageUrl(photoUrl);
-      const res = await submitNomination({
-        election_id: election.election_id,
-        manifesto,
-        photo_url: normalizedUrl,
-      });
+      const formData = new FormData();
+      formData.append('election_id', election.election_id);
+      formData.append('manifesto', manifesto);
+      if (photoFile) formData.append('photo', photoFile);
+
+      const res = await submitNomination(formData);
       setMsg(res?.message || 'Nomination submitted');
       
       // Fetch the newly created nomination to get full details including status
@@ -186,7 +215,8 @@ export default function NominationForm() {
       
       // Clear form fields
       setManifesto('');
-      setPhotoUrl('');
+      setPhotoFile(null);
+      setPhotoPreview('');
     } catch (error) {
       setErr(error.response?.data?.error || error.message || 'Failed to submit');
     } finally {
@@ -234,14 +264,24 @@ export default function NominationForm() {
                     />
                   </label>
                   <label className="block text-sm mb-2">
-                    Photo URL (optional)
+                    Photo (optional)
                     <input
-                      value={photoUrl}
-                      onChange={(e) => setPhotoUrl(e.target.value)}
-                      placeholder="https://..."
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoChange}
                       className="border p-2 w-full mt-1 mb-3"
                     />
                   </label>
+                  {photoPreview && (
+                    <div className="mb-3">
+                      <div className="text-xs text-gray-600 mb-1">Selected photo preview</div>
+                      <img
+                        src={photoPreview}
+                        alt="Selected nominee"
+                        className="w-24 h-24 rounded-full object-cover border"
+                      />
+                    </div>
+                  )}
                   <Button disabled={!manifesto || isSubmitting} className="px-4">
                     {isSubmitting ? 'Submitting...' : 'Submit Nomination'}
                   </Button>

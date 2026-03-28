@@ -3,10 +3,15 @@ const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 const { NODE_ENV, PORT, allowlist } = require('./config/appConfig');
 const app = express();
 function setupMiddleware(app) {
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    })
+  );
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
@@ -36,6 +41,7 @@ function setupMiddleware(app) {
     },
   });
   app.use(limiter);
+  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 }
 
 setupMiddleware(app);
