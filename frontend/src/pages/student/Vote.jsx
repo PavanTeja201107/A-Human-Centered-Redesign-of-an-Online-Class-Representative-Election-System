@@ -12,7 +12,7 @@
  *   Rendered as part of the student dashboard routes.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Navbar from '../../components/Navbar';
 import { getMyActiveElection } from '../../api/electionApi';
 import { listApprovedByElection } from '../../api/nominationApi';
@@ -57,6 +57,11 @@ const resolveCandidatePhoto = (candidate) => {
   return toDirectImageUrl(rawPhoto) || buildAvatarFallback(candidate?.name);
 };
 
+const VOICE_OPTIONS = [
+  { id: 'FEMALE', label: 'Female' },
+  { id: 'MALE', label: 'Male' },
+];
+
 export default function VotePage() {
   const [election, setElection] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -72,6 +77,145 @@ export default function VotePage() {
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [votingNotStarted, setVotingNotStarted] = useState(false);
   const [votingEnded, setVotingEnded] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingCandidateId, setSpeakingCandidateId] = useState('');
+  const [voices, setVoices] = useState([]);
+  const [voiceOption, setVoiceOption] = useState('FEMALE');
+  const [speechRate, setSpeechRate] = useState(0.95);
+  const utteranceRef = useRef(null);
+  const stopRequestedRef = useRef(false);
+
+  const stopSpeech = () => {
+    stopRequestedRef.current = true;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    utteranceRef.current = null;
+    setIsSpeaking(false);
+    setSpeakingCandidateId('');
+  };
+
+  const speakText = (text, candidateId = '') => {
+    if (typeof window === 'undefined' || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      setSpeechSupported(false);
+      setErr('Speech is not supported in this browser.');
+      return;
+    }
+
+    stopSpeech();
+    stopRequestedRef.current = false;
+    setErr('');
+
+    const liveVoices = window.speechSynthesis.getVoices() || voices || [];
+    const selectedVoice = getPreferredVoice(voiceOption, liveVoices);
+    const utterance = new window.SpeechSynthesisUtterance(text);
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    }
+
+    utterance.rate = Number(speechRate) || 0.95;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setSpeakingCandidateId(candidateId || 'ALL');
+    };
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setSpeakingCandidateId('');
+      utteranceRef.current = null;
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setSpeakingCandidateId('');
+      utteranceRef.current = null;
+      if (stopRequestedRef.current) return;
+      setErr('Failed to play speech. Please try again.');
+    };
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const speakAllNominees = () => {
+    if (!candidates.length) {
+      setErr('No nominees available to speak.');
+      return;
+    }
+
+    const details = candidates
+      .map((c, idx) => {
+        const manifesto = (c.manifesto || '').trim();
+        const cleanManifesto = manifesto ? manifesto.replace(/\s+/g, ' ') : 'No manifesto provided.';
+        return `Nominee ${idx + 1}. Name: ${c.name}. Student ID: ${c.student_id}. Manifesto: ${cleanManifesto}.`;
+      })
+      .join(' ');
+
+    speakText(`Nominee details for this election. ${details}`, 'ALL');
+  };
+
+  const speakSingleNominee = (candidate) => {
+    const manifesto = (candidate?.manifesto || '').trim();
+    const cleanManifesto = manifesto ? manifesto.replace(/\s+/g, ' ') : 'No manifesto provided.';
+    const text = `Name: ${candidate?.name}. Student ID: ${candidate?.student_id}. Manifesto: ${cleanManifesto}.`;
+    speakText(text, candidate?.student_id || '');
+  };
+
+  const detectGenderFromVoice = (voice) => {
+    const t = `${voice?.name || ''} ${voice?.voiceURI || ''}`.toLowerCase();
+    if (/female|woman|neerja|aria|zira|jenny|sara|emma|samantha|susan/i.test(t)) return 'FEMALE';
+    if (/male|man|prabhat|guy|davis|david|mark|roger|jacob|brandon|alex/i.test(t)) return 'MALE';
+    return 'UNKNOWN';
+  };
+
+  const getPreferredVoice = (option, allVoices) => {
+    const candidates = getVoiceCandidates(option, allVoices);
+    return candidates[0] || null;
+  };
+
+  const getVoiceCandidates = (option, allVoices) => {
+    const list = allVoices || [];
+    const byGender = (arr, g) => arr.filter((v) => detectGenderFromVoice(v) === g);
+    const byName = (arr, regex) => arr.find((v) => regex.test(`${v.name} ${v.voiceURI}`));
+    const uniq = (arr) => {
+      const seen = new Set();
+      return arr.filter((v) => {
+        const key = v?.voiceURI || `${v?.name}-${v?.lang}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
+    if (option === 'FEMALE') {
+      return uniq([
+        byName(list, /neerja|aria|zira|jenny|sara|emma|samantha|susan/i),
+        ...byGender(list, 'FEMALE'),
+      ].filter(Boolean));
+    }
+
+    if (option === 'MALE') {
+      return uniq([
+        byName(list, /prabhat|guy|davis|david|mark|roger|jacob|brandon|alex/i),
+        ...byGender(list, 'MALE'),
+      ].filter(Boolean));
+    }
+
+    return list;
+  };
+
+  const speakVotingPolicyDeclaration = () => {
+    if (!policy?.policy_text) {
+      setErr('Voting policy text is not available to speak.');
+      return;
+    }
+    const cleanPolicy = String(policy.policy_text).replace(/\s+/g, ' ').trim();
+    const declaration = `Voting policy declaration. Please listen carefully before accepting. ${cleanPolicy}`;
+    speakText(declaration, 'POLICY');
+  };
 
   useEffect(() => {
     (async () => {
@@ -133,6 +277,29 @@ export default function VotePage() {
         setCheckingStatus(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const supported = !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
+    setSpeechSupported(supported);
+    if (!supported) return undefined;
+
+    const loadVoices = () => {
+      const allVoices = window.speechSynthesis.getVoices() || [];
+      const englishVoices = allVoices.filter((v) => String(v.lang || '').toLowerCase().startsWith('en'));
+      const usableVoices = englishVoices.length ? englishVoices : allVoices;
+      setVoices(usableVoices);
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      stopSpeech();
+      window.speechSynthesis.onvoiceschanged = null;
+    };
   }, []);
 
   const getToken = async () => {
@@ -320,7 +487,74 @@ export default function VotePage() {
         {/* Candidate List - Simplified Radio Button UI */}
         {!alreadyVoted && !votingNotStarted && !votingEnded && token && candidates.length > 0 && (
           <div className="space-y-4 mb-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-3">Select Your Candidate</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <h2 className="text-xl font-semibold text-gray-800">Select Your Candidate</h2>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={speakAllNominees}
+                  disabled={!speechSupported || isSpeaking}
+                  className="px-3 py-2 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  🔊 Speak all nominees
+                </button>
+                <button
+                  type="button"
+                  onClick={stopSpeech}
+                  disabled={!speechSupported || !isSpeaking}
+                  className="px-3 py-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ⏹ Stop
+                </button>
+              </div>
+            </div>
+
+            {speechSupported && (
+              <div className="bg-white border border-gray-200 rounded-lg p-3 mb-3">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Speech Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="text-sm text-gray-700">
+                    Type of Person
+                    <select
+                      value={voiceOption}
+                      onChange={(e) => setVoiceOption(e.target.value)}
+                      className="mt-1 w-full border rounded px-2 py-1.5"
+                    >
+                      {VOICE_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="text-sm text-gray-700">
+                    Speed: {Number(speechRate).toFixed(2)}x
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="1.5"
+                      step="0.05"
+                      value={speechRate}
+                      onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                      className="mt-1 w-full"
+                    />
+                  </label>
+                </div>
+
+                {!getPreferredVoice(voiceOption, voices) && (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
+                    Selected voice type is not available on this browser/OS. Please install a male/female voice and refresh.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!speechSupported && (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-3 py-2 rounded text-sm">
+                Web Speech API is not supported in this browser.
+              </div>
+            )}
 
             {candidates.map((c) => (
               <div
@@ -364,6 +598,16 @@ export default function VotePage() {
                     {c.manifesto && (
                       <p className="text-sm text-gray-600 mt-1 line-clamp-3">{c.manifesto}</p>
                     )}
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => speakSingleNominee(c)}
+                        disabled={!speechSupported || isSpeaking}
+                        className="text-sm px-3 py-1.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {speakingCandidateId === c.student_id ? '🔊 Speaking...' : '🔊 Speak details'}
+                      </button>
+                    </div>
                   </div>
                 </label>
               </div>
@@ -392,7 +636,69 @@ export default function VotePage() {
               <div className="h-64 overflow-auto border p-3 whitespace-pre-wrap text-sm mb-4 bg-gray-50">
                 {policy.policy_text}
               </div>
-              <div className="flex justify-end gap-3">
+
+              {speechSupported && (
+                <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Speech Settings</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="text-sm text-gray-700">
+                      Type of Person
+                      <select
+                        value={voiceOption}
+                        onChange={(e) => setVoiceOption(e.target.value)}
+                        className="mt-1 w-full border rounded px-2 py-1.5"
+                      >
+                        {VOICE_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="text-sm text-gray-700">
+                      Speed: {Number(speechRate).toFixed(2)}x
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.05"
+                        value={speechRate}
+                        onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                  </div>
+
+                  {!getPreferredVoice(voiceOption, voices) && (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
+                      Selected voice type is not available on this browser/OS. Please install a male/female voice and refresh.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-wrap justify-between items-center gap-3">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={speakVotingPolicyDeclaration}
+                    disabled={!speechSupported || isSpeaking}
+                    className="px-3 py-2 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    🔊 Speak voting policy declaration
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopSpeech}
+                    disabled={!speechSupported || !isSpeaking}
+                    className="px-3 py-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    ⏹ Stop
+                  </button>
+                </div>
+
+                <div className="flex gap-3">
                 <button
                   onClick={() => setShowPolicy(false)}
                   className="px-4 py-2 rounded border border-gray-300 hover:bg-gray-50"
@@ -414,6 +720,7 @@ export default function VotePage() {
                 >
                   I Accept
                 </button>
+                </div>
               </div>
             </div>
           </div>

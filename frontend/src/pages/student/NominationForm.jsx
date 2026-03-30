@@ -13,13 +13,18 @@
  *   Rendered as part of the student dashboard routes.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Navbar from '../../components/Navbar';
 import { getMyElections } from '../../api/electionApi';
 import { submitNomination, getMyNomination } from '../../api/nominationApi';
 import { getPolicy, acceptPolicy, getPolicyStatus } from '../../api/policyApi';
 import Button from '../../components/ui/Button';
 import Alert from '../../components/ui/Alert';
+
+const VOICE_OPTIONS = [
+  { id: 'FEMALE', label: 'Female' },
+  { id: 'MALE', label: 'Male' },
+];
 
 export default function NominationForm() {
   const [election, setElection] = useState(null);
@@ -36,6 +41,108 @@ export default function NominationForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [policyStatusByElection, setPolicyStatusByElection] = useState({});
   const [nominationsByElection, setNominationsByElection] = useState({}); // Track nominations per election
+  const [speechSupported, setSpeechSupported] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voices, setVoices] = useState([]);
+  const [voiceOption, setVoiceOption] = useState('FEMALE');
+  const [speechRate, setSpeechRate] = useState(0.95);
+  const utteranceRef = useRef(null);
+  const stopRequestedRef = useRef(false);
+
+  const stopSpeech = () => {
+    stopRequestedRef.current = true;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    utteranceRef.current = null;
+    setIsSpeaking(false);
+  };
+
+  const detectGenderFromVoice = (voice) => {
+    const t = `${voice?.name || ''} ${voice?.voiceURI || ''}`.toLowerCase();
+    if (/female|woman|neerja|aria|zira|jenny|sara|emma|samantha|susan/i.test(t)) return 'FEMALE';
+    if (/male|man|prabhat|guy|davis|david|mark|roger|jacob|brandon|alex/i.test(t)) return 'MALE';
+    return 'UNKNOWN';
+  };
+
+  const getPreferredVoice = (option, allVoices) => {
+    const candidates = getVoiceCandidates(option, allVoices);
+    return candidates[0] || null;
+  };
+
+  const getVoiceCandidates = (option, allVoices) => {
+    const list = allVoices || [];
+    const byGender = (arr, g) => arr.filter((v) => detectGenderFromVoice(v) === g);
+    const byName = (arr, regex) => arr.find((v) => regex.test(`${v.name} ${v.voiceURI}`));
+    const uniq = (arr) => {
+      const seen = new Set();
+      return arr.filter((v) => {
+        const key = v?.voiceURI || `${v?.name}-${v?.lang}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
+    if (option === 'FEMALE') {
+      return uniq([
+        byName(list, /neerja|aria|zira|jenny|sara|emma|samantha|susan/i),
+        ...byGender(list, 'FEMALE'),
+      ].filter(Boolean));
+    }
+
+    if (option === 'MALE') {
+      return uniq([
+        byName(list, /prabhat|guy|davis|david|mark|roger|jacob|brandon|alex/i),
+        ...byGender(list, 'MALE'),
+      ].filter(Boolean));
+    }
+
+    return list;
+  };
+
+  const speakNominationPolicyDeclaration = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      setSpeechSupported(false);
+      setErr('Speech is not supported in this browser.');
+      return;
+    }
+    if (!policy?.policy_text) {
+      setErr('Nomination policy text is not available to speak.');
+      return;
+    }
+
+    stopSpeech();
+    stopRequestedRef.current = false;
+    setErr('');
+
+    const liveVoices = window.speechSynthesis.getVoices() || voices || [];
+    const selectedVoice = getPreferredVoice(voiceOption, liveVoices);
+    const cleanPolicy = String(policy.policy_text).replace(/\s+/g, ' ').trim();
+    const declaration = `Nomination policy declaration. Please listen carefully before accepting. ${cleanPolicy}`;
+
+    const utterance = new window.SpeechSynthesisUtterance(declaration);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    }
+    utterance.rate = Number(speechRate) || 0.95;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      utteranceRef.current = null;
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      utteranceRef.current = null;
+      if (stopRequestedRef.current) return;
+      setErr('Failed to play policy declaration speech.');
+    };
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
 
   useEffect(() => {
     (async () => {
@@ -100,8 +207,29 @@ export default function NominationForm() {
       if (photoPreview && photoPreview.startsWith('blob:')) {
         URL.revokeObjectURL(photoPreview);
       }
+      stopSpeech();
     };
   }, [photoPreview]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const supported = !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
+    setSpeechSupported(supported);
+    if (!supported) return;
+
+    const loadVoices = () => {
+      const allVoices = window.speechSynthesis.getVoices() || [];
+      const englishVoices = allVoices.filter((v) => String(v.lang || '').toLowerCase().startsWith('en'));
+      const usable = englishVoices.length ? englishVoices : allVoices;
+      setVoices(usable);
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
 
   const toDirectImageUrl = (url) => {
     try {
@@ -533,6 +661,65 @@ export default function NominationForm() {
               <div className="h-64 overflow-auto border p-2 whitespace-pre-wrap text-sm mb-3">
                 {policy.policy_text}
               </div>
+
+              {speechSupported && (
+                <div className="border rounded p-3 mb-3 bg-gray-50">
+                  <div className="text-sm font-semibold text-gray-700 mb-2">Speech Settings</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label className="text-sm text-gray-700">
+                      Type of Person
+                      <select
+                        value={voiceOption}
+                        onChange={(e) => setVoiceOption(e.target.value)}
+                        className="mt-1 w-full border rounded px-2 py-1.5"
+                      >
+                        {VOICE_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm text-gray-700">
+                      Speed: {Number(speechRate).toFixed(2)}x
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.05"
+                        value={speechRate}
+                        onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                        className="mt-1 w-full"
+                      />
+                    </label>
+                  </div>
+
+                  {!getPreferredVoice(voiceOption, voices) && (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
+                      Selected voice type is not available on this browser/OS. Please install a male/female voice and refresh.
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      type="button"
+                      onClick={speakNominationPolicyDeclaration}
+                      disabled={isSpeaking}
+                    >
+                      🔊 Speak nomination policy declaration
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={stopSpeech}
+                      disabled={!isSpeaking}
+                    >
+                      ⏹ Stop
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" onClick={() => setShowPolicy(false)}>
                   Cancel
