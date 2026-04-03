@@ -69,6 +69,7 @@ export default function StudentDashboard() {
     to: '/student/winner-certificate',
     label: 'Download Winner Certificate',
   };
+  const showWinnerNotice = notificationsEnabled && canDownloadWinnerCertificate;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -169,10 +170,21 @@ export default function StudentDashboard() {
                     {notificationsEnabled ? 'Enabled' : 'Disabled'}
                   </button>
                 </div>
-                {!notices || notices.length === 0 || !notificationsEnabled ? (
+                {!notificationsEnabled ? (
+                  <div className="text-gray-600">Notifications are disabled.</div>
+                ) : (!notices || notices.length === 0) && !showWinnerNotice ? (
                   <div className="text-gray-600">No notifications yet.</div>
                 ) : (
                   <ul className="space-y-3">
+                    {showWinnerNotice && (
+                      <li>
+                        <Alert kind="winner">
+                          <div className="text-sm font-semibold text-rose-950">
+                            Congrats! You won the election. Download your certificate from Quick Links on the Student Dashboard.
+                          </div>
+                        </Alert>
+                      </li>
+                    )}
                     {notices.slice(0, 3).map((n, idx) => {
                       const kind =
                         n.type === 'RESULTS_PUBLISHED'

@@ -20,6 +20,8 @@ const STYLES = {
   info: 'bg-blue-50 text-blue-800 border-blue-200',
   // Style for success alerts (green)
   success: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  // Style for winner alerts (red)
+  winner: 'bg-rose-50 text-rose-900 border-rose-300',
   // Style for warning alerts (yellow)
   warning: 'bg-yellow-50 text-yellow-800 border-yellow-200',
   // Style for danger alerts (red)
@@ -53,6 +55,7 @@ export default function Alert({ kind = 'info', title, children, className = '' }
     {
       info: 'border-l-blue-400',
       success: 'border-l-emerald-400',
+      winner: 'border-l-rose-500',
       warning: 'border-l-yellow-400',
       danger: 'border-l-red-400',
     }[kind] || 'border-l-blue-400';
