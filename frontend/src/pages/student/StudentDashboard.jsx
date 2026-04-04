@@ -178,11 +178,17 @@ export default function StudentDashboard() {
                   <ul className="space-y-3">
                     {showWinnerNotice && (
                       <li>
-                        <Alert kind="winner">
-                          <div className="text-sm font-semibold text-rose-950">
-                            Congrats! You won the election. Download your certificate from Quick Links on the Student Dashboard.
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5 pl-6 shadow-sm">
+                          <div className="border-l-4 border-emerald-500 pl-4">
+                            <div className="flex items-center gap-2 text-xl font-extrabold text-emerald-900">
+                              <span aria-hidden="true">🏆</span>
+                              <span>Congratulations!</span>
+                            </div>
+                            <p className="mt-2 text-base font-medium leading-relaxed text-emerald-800">
+                              You won the election. Download your certificate from Quick Links.
+                            </p>
                           </div>
-                        </Alert>
+                        </div>
                       </li>
                     )}
                     {notices.slice(0, 3).map((n, idx) => {
