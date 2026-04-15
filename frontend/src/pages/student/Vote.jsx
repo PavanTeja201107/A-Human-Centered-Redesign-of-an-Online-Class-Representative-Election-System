@@ -556,62 +556,77 @@ export default function VotePage() {
               </div>
             )}
 
-            {candidates.map((c) => (
-              <div
-                key={c.student_id}
-                className={`bg-white border-2 rounded-lg p-4 transition-all ${
-                  selectedCandidateId === c.student_id
-                    ? 'border-indigo-500 bg-indigo-50'
-                    : 'border-gray-200 hover:border-indigo-300'
-                }`}
-              >
-                <label
-                  htmlFor={`candidate-${c.student_id}`}
-                  className="flex items-center gap-4 cursor-pointer"
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {candidates.map((c) => (
+                <div
+                  key={c.student_id}
+                  className={`bg-white border-2 rounded-2xl p-5 transition-all ${
+                    selectedCandidateId === c.student_id
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-200 hover:border-indigo-300'
+                  }`}
                 >
-                  {/* Radio Button */}
-                  <input
-                    type="radio"
-                    id={`candidate-${c.student_id}`}
-                    name="candidate"
-                    value={c.student_id}
-                    checked={selectedCandidateId === c.student_id}
-                    onChange={() => setSelectedCandidateId(c.student_id)}
-                    className="w-5 h-5 text-indigo-600 focus:ring-indigo-500"
-                  />
+                  <label htmlFor={`candidate-${c.student_id}`} className="block cursor-pointer">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xl font-semibold text-gray-900">{c.name}</div>
+                        <p className="text-sm text-gray-500">Candidate ID: {c.student_id}</p>
+                      </div>
 
-                  {/* Candidate Photo */}
-                  <img
-                    src={c.photo_url}
-                    alt={c.name}
-                    className="w-16 h-16 rounded-full object-cover border border-gray-200"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = buildAvatarFallback(c.name);
-                    }}
-                  />
-
-                  {/* Candidate Info */}
-                  <div className="flex-1">
-                    <div className="font-semibold text-lg text-gray-900">{c.name}</div>
-                    <div className="text-sm text-gray-500 font-medium">ID: {c.student_id}</div>
-                    {c.manifesto && (
-                      <p className="text-sm text-gray-600 mt-1 line-clamp-3">{c.manifesto}</p>
-                    )}
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        onClick={() => speakSingleNominee(c)}
-                        disabled={!speechSupported || isSpeaking}
-                        className="text-sm px-3 py-1.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {speakingCandidateId === c.student_id ? '🔊 Speaking...' : '🔊 Speak details'}
-                      </button>
+                      <input
+                        type="radio"
+                        id={`candidate-${c.student_id}`}
+                        name="candidate"
+                        value={c.student_id}
+                        checked={selectedCandidateId === c.student_id}
+                        onChange={() => setSelectedCandidateId(c.student_id)}
+                        className="mt-1 h-5 w-5 text-indigo-600 focus:ring-indigo-500"
+                      />
                     </div>
+
+                    <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                      <img
+                        src={c.photo_url}
+                        alt={c.name}
+                        className="h-56 w-full object-cover sm:h-64"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = buildAvatarFallback(c.name);
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-4 space-y-2 text-sm text-gray-700">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Student ID
+                        </span>
+                        <span className="font-medium text-gray-900">{c.student_id}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Candidate Description
+                        </span>
+                        <p className="leading-relaxed text-gray-700">
+                          {c.manifesto || 'No manifesto provided.'}
+                        </p>
+                      </div>
+                    </div>
+                  </label>
+
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => speakSingleNominee(c)}
+                      disabled={!speechSupported || isSpeaking}
+                      className="text-sm px-3 py-1.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {speakingCandidateId === c.student_id ? '🔊 Speaking...' : '🔊 Speak details'}
+                    </button>
                   </div>
-                </label>
-              </div>
-            ))}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
